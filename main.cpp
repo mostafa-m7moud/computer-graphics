@@ -17,6 +17,10 @@
 #define MENU_CIRCLE_MIDPOINT 22
 #define MENU_CIRCLE_DDA 21
 
+#define MENU_ELLIPSE_MIDPOINT 41
+#define MENU_ELLIPSE_DIRECT 42
+#define MENU_ELLIPSE_POLAR 43
+
 #define COLOR_RED 30
 #define COLOR_BLUE 31
 #define COLOR_GREEN 32
@@ -36,7 +40,7 @@ struct point{
     int y;
 };
 
-point p1,p2;
+point p1,p2,p3;
 COLORREF mainColorRef = RGB(255, 0, 0);
 
 void createButton(HWND hwnd);
@@ -54,6 +58,9 @@ void Draw8Points(HDC hdc,int xc,int yc, int a, int b,COLORREF color);
 void CircleMidPoint(HDC hdc,int xc,int yc, int R,COLORREF color);
 void CircleIterativePolar(HDC hdc,int xc,int yc, int R,COLORREF color);
 ////////////////////////////
+
+// ellipse Algorithms Methods
+void midptellipse(HDC hdc, int rx, int ry, int xc, int yc, COLORREF color);
 
 int WINAPI WinMain (HINSTANCE hThisInstance,
                      HINSTANCE hPrevInstance,
@@ -139,6 +146,10 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
             p2.x = LOWORD(lParam);
             p2.y = HIWORD(lParam);
             break;
+        case WM_LBUTTONDBLCLK:
+            p3.x = LOWORD(lParam);
+            p3.y = HIWORD(lParam);
+            break;
         case WM_DESTROY:
             PostQuitMessage (0);       /* send a WM_QUIT to the message queue */
             break;
@@ -171,6 +182,12 @@ void menuCommandHandler(WPARAM wParam, HWND hwnd){
         case MENU_CIRCLE_MIDPOINT:{
             int r = sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
             CircleMidPoint(GetDC(hwnd), p1.x, p1.y, r, mainColorRef);
+            break;
+        }
+        case MENU_ELLIPSE_MIDPOINT:{
+            int r1 = sqrt(pow(p3.x - p1.x, 2) + pow(p3.y - p1.y, 2));
+            int r2 = sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
+            midptellipse(GetDC(hwnd), r1, r2, p1.x, p1.y, mainColorRef);
             break;
         }
         case COLOR_RED:
@@ -208,9 +225,15 @@ void createMainMenu(HWND hwnd){
     AppendMenu(CircleMenu, MF_STRING, MENU_CIRCLE_MIDPOINT, "Midpoint");
     AppendMenu(CircleMenu, MF_STRING, MENU_CIRCLE_DDA, "DDA");
 
+    HMENU ellipseMenu = CreateMenu();
+    AppendMenu(ellipseMenu, MF_STRING, MENU_ELLIPSE_MIDPOINT, "Midpoint");
+    AppendMenu(ellipseMenu, MF_STRING, MENU_ELLIPSE_DIRECT, "Direct");
+    AppendMenu(ellipseMenu, MF_STRING, MENU_ELLIPSE_POLAR, "Polar");
+
     HMENU drawMenu = CreateMenu();
     AppendMenu(drawMenu, MF_POPUP, (UINT_PTR) lineMenu, "Line Algorithms");
     AppendMenu(drawMenu, MF_POPUP, (UINT_PTR) CircleMenu, "Circle Algorithms");
+    AppendMenu(drawMenu, MF_POPUP, (UINT_PTR) ellipseMenu, "ellipse Algorithms");
 
     HMENU colorMenu = CreateMenu();
     AppendMenu(colorMenu, MF_STRING, COLOR_RED, "Red");
@@ -266,32 +289,29 @@ void LineParametric(HDC hdc, point p1, point p2,COLORREF color){
 }
 
 void LineMidPoint(HDC hdc, point p1, point p2,COLORREF color){
-    int x1 = p1.x, x2 = p2.x;
-    int y1 = p1.y, y2 = p2.y;
-    int dx=x2-x1;
-    int dy=y2-y1;
-    int d=2*dx+dy;
-    int d1=2*dx;
-    int d2=2*dx+2*dy;
-    int x=x1;
-    int y=y1;
-    SetPixel(hdc,x1,y1,color);
-    while(y<y2)
+    int X2 = p1.x, X1 = p2.x;
+    int Y2 = p1.y, Y1 = p2.y;
+
+    int dx = X2 - X1;
+    int dy = Y2 - Y1;
+
+    int d = dy - (dx/2);
+    int x = X1, y = Y1;
+    SetPixel(hdc, x, y, color);
+    while (x < X2)
     {
-        if(d>0)
-        {
-            y++;
-            d=d+d1;
-        }
+        x++;
+        if (d < 0)
+            d = d + dy;
         else
         {
-            x--;
+            d += (dy - dx);
             y++;
-            d+=d2;
         }
-        SetPixel(hdc,x,y,color);
+        SetPixel(hdc, x, y, color);
     }
 }
+
 //////////////////
 
 // Circle Algorithms
@@ -344,6 +364,91 @@ void CircleIterativePolar(HDC hdc,int xc,int yc, int R,COLORREF color){
     }
 }
 ////////////////////
+void midptellipse(HDC hdc, int rx, int ry, int xc, int yc, COLORREF color)
+{
+    float dx, dy, d1, d2, x, y;
+    x = 0;
+    y = ry;
 
+    // Initial decision parameter of region 1
+    d1 = (ry * ry) - (rx * rx * ry) +
+                     (0.25 * rx * rx);
+    dx = 2 * ry * ry * x;
+    dy = 2 * rx * rx * y;
+
+    // For region 1
+    while (dx < dy)
+    {
+
+        // Print points based on 4-way symmetry
+        SetPixel(hdc, x + xc, y + yc, color);
+        SetPixel(hdc, -x + xc, y + yc, color);
+        SetPixel(hdc, x + xc, -y + yc, color);
+        SetPixel(hdc, -x + xc, -y + yc, color);
+
+        // Checking and updating value of
+        // decision parameter based on algorithm
+        if (d1 < 0)
+        {
+            x++;
+            dx = dx + (2 * ry * ry);
+            d1 = d1 + dx + (ry * ry);
+        }
+        else
+        {
+            x++;
+            y--;
+            dx = dx + (2 * ry * ry);
+            dy = dy - (2 * rx * rx);
+            d1 = d1 + dx - dy + (ry * ry);
+        }
+    }
+
+    // Decision parameter of region 2
+    d2 = ((ry * ry) * ((x + 0.5) * (x + 0.5))) +
+         ((rx * rx) * ((y - 1) * (y - 1))) -
+          (rx * rx * ry * ry);
+
+    // Plotting points of region 2
+    while (y >= 0)
+    {
+
+        // Print points based on 4-way symmetry
+        SetPixel(hdc, x + xc, y + yc, color);
+        SetPixel(hdc, -x + xc, y + yc, color);
+        SetPixel(hdc, x + xc, -y + yc, color);
+        SetPixel(hdc, -x + xc, -y + yc, color);
+        // Checking and updating parameter
+        // value based on algorithm
+        if (d2 > 0)
+        {
+            y--;
+            dy = dy - (2 * rx * rx);
+            d2 = d2 + (rx * rx) - dy;
+        }
+        else
+        {
+            y--;
+            x++;
+            dx = dx + (2 * ry * ry);
+            dy = dy - (2 * rx * rx);
+            d2 = d2 + dx - dy + (rx * rx);
+        }
+    }
+}
+
+
+//curve
+//point RBezier(p,n,t,color)
+//{
+//	if(n==1)
+//	  return p[0];
+//    return (1-t)*RBezier(p, n-1, t, color) + t*RBezier(p+1,n,t, color);
+//}
+//
+//void Bezier(p, n, color)
+//{
+//
+//}
 
 
